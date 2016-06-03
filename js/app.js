@@ -15,10 +15,14 @@ $(document).ready(function () {
 	$("#canvas").width(WIDTH);
 	$("#canvas").height(HEIGHT);
 
+	// The fabric canvas offers us an easy way to throw up some circles, and drag and drop them by default
 	var canvas = new fabric.Canvas("canvas");
 	canvas.setWidth(WIDTH);
 	canvas.setHeight(HEIGHT);
 
+	// We use a second canvas underneath the fabric canvas to render the field lines
+	// The field line rendering method can then access the raw graphics context of this canvas
+	// and draw the many lines more efficiently.
 	var renderCanvas = $("#canvas").clone();
 	renderCanvas.attr("id", "renderCanvas");
 	$(".canvas-container").prepend(renderCanvas);
@@ -127,7 +131,7 @@ var SimulationManager = function () {
 			var g = _this.drawCharge(c);
 			c.graphics = g;
 			_this.charges.push(c);
-			_this.renderFieldLines();
+			_this.renderField();
 		});
 		this.canvas.on("object:modified", function (info) {
 			var p = [info.target.left, info.target.top];
@@ -136,7 +140,7 @@ var SimulationManager = function () {
 				return x.graphics == info.target;
 			});
 			c.point = new (Function.prototype.bind.apply(jm.Vec2, [null].concat(_toConsumableArray(ap))))();
-			_this.renderFieldLines();
+			_this.renderField();
 		});
 		$(canvas.wrapperEl).on('mousewheel', function (e) {
 			var target = canvas.findTarget(e);
@@ -146,14 +150,11 @@ var SimulationManager = function () {
 					return x.graphics == target;
 				});
 				c.value = delta > 0 ? c.value + 0.4 : c.value - 0.4;
-				console.log(15 * Math.abs(c.value));
-				_this.renderFieldLines();
+				_this.renderField();
 				c.graphics.remove();
 				c.graphics = _this.drawCharge(c);
 			}
 		});
-
-		console.log(this);
 	}
 
 	_createClass(SimulationManager, [{
@@ -167,7 +168,7 @@ var SimulationManager = function () {
 				top: p[1],
 				stroke: "black",
 				fill: c.value < 0 ? "blue" : "red",
-				radius: 15 * Math.abs(c.value),
+				radius: Math.max(15 * Math.sqrt(Math.abs(c.value)), 8),
 				hasControls: false
 			});
 			this.canvas.add(c);
@@ -209,13 +210,57 @@ var SimulationManager = function () {
 			return sum;
 		}
 	}, {
+		key: "clearField",
+		value: function clearField() {
+			this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
+		}
+	}, {
+		key: "renderField",
+		value: function renderField() {
+			this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
+
+			var gridStep = (this.cs.maxX - this.cs.minX) / 80;
+			var maxLength = gridStep * 0.8;
+
+			var vec = new jm.Vec2(0, 0);
+			var longest = new jm.Vec2(0.1, 0.1);
+
+			var cx = this.cs.minX;
+			while (cx < this.cs.maxX) {
+				var cy = this.cs.minY;
+				while (cy < this.cs.maxY) {
+
+					vec.set(cx, cy);
+
+					var dists = this.charges.map(function (x) {
+						return vec.distSq(x.point);
+					});
+
+					var field = this.calcField(vec);
+					if (field.magSq() > maxLength * maxLength) field.norm().scale(maxLength);
+					var stepped = vec.clone().add(field);
+
+					var start = this.cs.coordToPixels([cx, cy]);
+					var end = this.cs.coordToPixels([stepped.getX(), stepped.getY()]);
+
+					this.renderContext.beginPath();
+					this.renderContext.moveTo(start[0], start[1]);
+					this.renderContext.lineTo(end[0], end[1]);
+					this.renderContext.stroke();
+
+					cy += gridStep;
+				}
+				cx += gridStep;
+			}
+		}
+	}, {
 		key: "renderFieldLines",
 		value: function renderFieldLines() {
 			var _this2 = this;
 
 			// Unit vectors in evenly spaced directions
-			var directions = [0, 1, 2, 3, 4, 5, 6, 7].map(function (k) {
-				return new jm.Vec2(Math.cos(2 * Math.PI * k / 8), Math.sin(2 * Math.PI * k / 8));
+			var directions = [0, 1, 2, 3, 4, 5].map(function (k) {
+				return new jm.Vec2(Math.cos(2 * Math.PI * k / 6), Math.sin(2 * Math.PI * k / 6));
 			});
 
 			this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
@@ -267,9 +312,7 @@ var SimulationManager = function () {
 							var dir = _step4.value;
 
 
-							// Initial condition
 							var start = dir.clone().scale(0.1).add(charge.point);
-							console.log(start);
 
 							var vec = new jm.Vec2(0, 0);
 							var currentField;
@@ -313,6 +356,39 @@ var SimulationManager = function () {
 							}
 
 							this.renderContext.stroke();
+
+							// var start = dir.clone().scale(0.1).add(charge.point);
+							//
+							// var vec = new jm.Vec2(0, 0);
+							// var currentField;
+							//
+							// var step = (start.getX() - charge.point.getX() > 0) ? 0.001 : -0.001;
+							// var solver = rk4([start.getY()], (dydx, y, x) => {
+							// 	vec.set(x, y);
+							// 	currentField = this.calcField(vec);
+							// 	dydx[0] = currentField.getY() / currentField.getX();
+							// }, start.getX(), step);
+							//
+							// var as = this.cs.coordToPixels([start.getX(), start.getY()]);
+							//
+							// this.renderContext.beginPath();
+							// this.renderContext.moveTo(as[0], as[1]);
+							//
+							// var counter = 0;
+							// var ap;
+							// while (true) {
+							// 	solver.step();
+							// 	if (counter == 10) {
+							// 		ap = this.cs.coordToPixels([solver.t, solver.y[0]]);
+							// 		if (!this.cs.inRealBounds(ap)) break;
+							// 		this.renderContext.lineTo(ap[0], ap[1]);
+							// 		counter = 0;
+							// 	}
+							// 	counter += 1;
+							// }
+							//
+							// console.log(solver);
+							// this.renderContext.stroke();
 						}
 					} catch (err) {
 						_didIteratorError4 = true;
