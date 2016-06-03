@@ -22,7 +22,7 @@ class CoordinateSystem {
 		this.miny = -h / 2;
 	}
 
-	getMatrix() {
+	calculateTransformation() {
 		var left = this.minX;
 		var top = this.maxY;
 		var width = this.maxX - this.minX;
@@ -34,6 +34,28 @@ class CoordinateSystem {
 		var sx = (1 / width) * this.realWidth;
 		var sy = (1 / height) * this.realHeight;
 
-		return {sx, sy, tx, ty};
+		this.transform = {sx, sy, tx, ty};
+	}
+
+	coordToPixels(p) {
+		return [
+			this.transform.tx + this.transform.sx * p[0],
+			this.transform.ty + this.transform.sy * p[1]
+		]
+	}
+
+	pixelsToCoord(p) {
+		return [
+			(-1.0 * this.transform.tx/this.transform.sx) + (1.0/this.transform.sx) * p[0],
+			(-1.0 * this.transform.ty/this.transform.sy) + (1.0/this.transform.sy) * p[1]
+		]
+	}
+
+	inBounds(p) {
+		return p[0] > this.minX && p[0] < this.maxX && p[1] > this.minY && p[1] < this.maxY;
+	}
+
+	inRealBounds(p) {
+		return p[0] > 0 && p[0] < this.realWidth && p[1] > 0 && p[1] < this.realHeight;
 	}
 }

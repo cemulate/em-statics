@@ -11,6 +11,8 @@ var es      = require('event-stream');
 var runSeq  = require('run-sequence');
 var ghPages = require('gulp-gh-pages');
 var connect = require('gulp-connect');
+var browserify = require('browserify');
+var source = require('vinyl-source-stream');
 
 gulp.task('clean', function () {
     // Clear the destination folder
@@ -28,18 +30,27 @@ gulp.task('copy', function () {
     );
 });
 
-gulp.task('scripts', function () {
-    // Concatenate, babelify and copy all JavaScript (except vendor scripts)
+gulp.task('babel', function () {
     return gulp.src(['src/js/**/*.js'])
         .pipe(concat('app.js'))
         .pipe(babel({
             presets: [es2015]
         }))
-        .pipe(gulp.dest('dist/js'))
+        .pipe(gulp.dest('dist/js'));
+});
+
+gulp.task('browserify', function() {
+    var b = browserify('dist/js/app.js').bundle();
+    return b.pipe(source('app.js')).pipe(gulp.dest('dist/js'));
+});
+
+var needBrowserify = true;
+gulp.task('scripts', function() {
+    needBrowserify ? runSeq('babel', 'browserify') : runSeq('babel');
 });
 
 gulp.task('frontend', function() {
-    var frontendPackages = ["foundation-sites", "jquery", "snapsvg"];
+    var frontendPackages = ["foundation-sites", "jquery", "fabric"];
 
     var glob = "node_modules/+(" + frontendPackages.join("|") + ")/**/*";
     gutil.log(glob);
