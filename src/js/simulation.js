@@ -1,4 +1,3 @@
-var rk4 = require('ode-rk4');
 var jm = require('justmath');
 
 class PointCharge {
@@ -62,6 +61,9 @@ class SimulationManager {
 	}
 
 	calcField(point) {
+
+		// Working in cgs units. Simulation coordinates are in cm, and this returns E-field in statV/m
+
 		var sum = new jm.Vec2(0, 0);
 		var highComponents = false;
 		for (var charge of this.charges) {
@@ -79,6 +81,8 @@ class SimulationManager {
 
 	renderField() {
 		this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
+		this.renderContext.lineWidth = 2.0;
+		this.renderContext.strokeStyle = "rgb(50, 50, 50)";
 
 		var gridStep = (this.cs.maxX - this.cs.minX) / 80;
 		var maxLength = gridStep * 0.8;
@@ -96,9 +100,12 @@ class SimulationManager {
 				var dists = this.charges.map(x => vec.distSq(x.point));
 
 				var field = this.calcField(vec);
+
+				// "Construct" the arrow in native CS coordinates (maxLength is interpreted in CS coordinates as well)
 				if (field.magSq() > maxLength*maxLength) field.norm().scale(maxLength);
 				var stepped = vec.clone().add(field);
 
+				// Convert both to pixels here for drawing
 				var start = this.cs.coordToPixels([cx, cy]);
 				var end = this.cs.coordToPixels([stepped.getX(), stepped.getY()]);
 
@@ -110,105 +117,6 @@ class SimulationManager {
 				cy += gridStep;
 			}
 			cx += gridStep;
-		}
-	}
-
-	renderFieldLines() {
-
-		// Unit vectors in evenly spaced directions
-		var directions = [0,1,2,3,4,5].map(k => new jm.Vec2(Math.cos(2*Math.PI*k/6), Math.sin(2*Math.PI*k/6)));
-
-		this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
-
-		var allNegative = true;
-		for (var charge of this.charges) {
-			if (charge.value > 0) allNegative = false;
-		}
-
-		for (var charge of this.charges) {
-
-			//if (!allNegative && charge.value < 0) continue;
-			var isNegative = (charge.value < 0);
-
-			for (var dir of directions) {
-
-				var start = dir.clone().scale(0.1).add(charge.point);
-
-				var vec = new jm.Vec2(0, 0);
-				var currentField;
-
-				var solver = rk4([start.getX(), start.getY()], (drdt, r, t) => {
-					vec.set(r[0], r[1]);
-					currentField = this.calcField(vec);
-					drdt[0] = currentField.getX() * (isNegative ? -1 : 1);
-					drdt[1] = currentField.getY() * (isNegative ? -1 : 1);
-				}, 0, 0.01);
-
-				var as = this.cs.coordToPixels([start.getX(), start.getY()]);
-
-				this.renderContext.beginPath();
-				this.renderContext.moveTo(as[0], as[1]);
-
-				var counter = 0;
-				var ap;
-				var fp = new fabric.Point(0, 0);
-				while (true) {
-					solver.step();
-					ap = this.cs.coordToPixels(solver.y);
-					if (counter == 10) {
-						if (!this.cs.inRealBounds(ap)) break;
-						this.renderContext.lineTo(ap[0], ap[1]);
-						counter = 0;
-					}
-
-					fp.setXY(...ap);
-					if (this.charges.find(x => x.graphics.containsPoint(fp))) break;
-
-					// if (currentField.getX() < 0.1 || currentField.getY() < 0.1) {
-					// 	if (currentField.magSq() < 0.05) {
-					// 		break;
-					// 	}
-					// }
-
-					counter += 1;
-				}
-
-				this.renderContext.stroke();
-
-				// var start = dir.clone().scale(0.1).add(charge.point);
-				//
-				// var vec = new jm.Vec2(0, 0);
-				// var currentField;
-				//
-				// var step = (start.getX() - charge.point.getX() > 0) ? 0.001 : -0.001;
-				// var solver = rk4([start.getY()], (dydx, y, x) => {
-				// 	vec.set(x, y);
-				// 	currentField = this.calcField(vec);
-				// 	dydx[0] = currentField.getY() / currentField.getX();
-				// }, start.getX(), step);
-				//
-				// var as = this.cs.coordToPixels([start.getX(), start.getY()]);
-				//
-				// this.renderContext.beginPath();
-				// this.renderContext.moveTo(as[0], as[1]);
-				//
-				// var counter = 0;
-				// var ap;
-				// while (true) {
-				// 	solver.step();
-				// 	if (counter == 10) {
-				// 		ap = this.cs.coordToPixels([solver.t, solver.y[0]]);
-				// 		if (!this.cs.inRealBounds(ap)) break;
-				// 		this.renderContext.lineTo(ap[0], ap[1]);
-				// 		counter = 0;
-				// 	}
-				// 	counter += 1;
-				// }
-				//
-				// console.log(solver);
-				// this.renderContext.stroke();
-
-			}
 		}
 	}
 }
