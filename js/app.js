@@ -102,7 +102,6 @@ var CoordinateSystem = function () {
 	return CoordinateSystem;
 }();
 
-var rk4 = require('ode-rk4');
 var jm = require('justmath');
 
 var PointCharge = function PointCharge(point, value) {
@@ -177,6 +176,9 @@ var SimulationManager = function () {
 	}, {
 		key: "calcField",
 		value: function calcField(point) {
+
+			// Working in cgs units. Simulation coordinates are in cm, and this returns E-field in statV/m
+
 			var sum = new jm.Vec2(0, 0);
 			var highComponents = false;
 			var _iteratorNormalCompletion = true;
@@ -218,6 +220,8 @@ var SimulationManager = function () {
 		key: "renderField",
 		value: function renderField() {
 			this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
+			this.renderContext.lineWidth = 2.0;
+			this.renderContext.strokeStyle = "rgb(50, 50, 50)";
 
 			var gridStep = (this.cs.maxX - this.cs.minX) / 80;
 			var maxLength = gridStep * 0.8;
@@ -237,9 +241,12 @@ var SimulationManager = function () {
 					});
 
 					var field = this.calcField(vec);
+
+					// "Construct" the arrow in native CS coordinates (maxLength is interpreted in CS coordinates as well)
 					if (field.magSq() > maxLength * maxLength) field.norm().scale(maxLength);
 					var stepped = vec.clone().add(field);
 
+					// Convert both to pixels here for drawing
 					var start = this.cs.coordToPixels([cx, cy]);
 					var end = this.cs.coordToPixels([stepped.getX(), stepped.getY()]);
 
@@ -253,178 +260,11 @@ var SimulationManager = function () {
 				cx += gridStep;
 			}
 		}
-	}, {
-		key: "renderFieldLines",
-		value: function renderFieldLines() {
-			var _this2 = this;
-
-			// Unit vectors in evenly spaced directions
-			var directions = [0, 1, 2, 3, 4, 5].map(function (k) {
-				return new jm.Vec2(Math.cos(2 * Math.PI * k / 6), Math.sin(2 * Math.PI * k / 6));
-			});
-
-			this.renderContext.clearRect(0, 0, this.cs.realWidth, this.cs.realHeight);
-
-			var allNegative = true;
-			var _iteratorNormalCompletion2 = true;
-			var _didIteratorError2 = false;
-			var _iteratorError2 = undefined;
-
-			try {
-				for (var _iterator2 = this.charges[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-					var charge = _step2.value;
-
-					if (charge.value > 0) allNegative = false;
-				}
-			} catch (err) {
-				_didIteratorError2 = true;
-				_iteratorError2 = err;
-			} finally {
-				try {
-					if (!_iteratorNormalCompletion2 && _iterator2.return) {
-						_iterator2.return();
-					}
-				} finally {
-					if (_didIteratorError2) {
-						throw _iteratorError2;
-					}
-				}
-			}
-
-			var _iteratorNormalCompletion3 = true;
-			var _didIteratorError3 = false;
-			var _iteratorError3 = undefined;
-
-			try {
-				for (var _iterator3 = this.charges[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
-					var charge = _step3.value;
-
-
-					//if (!allNegative && charge.value < 0) continue;
-					var isNegative = charge.value < 0;
-
-					var _iteratorNormalCompletion4 = true;
-					var _didIteratorError4 = false;
-					var _iteratorError4 = undefined;
-
-					try {
-						for (var _iterator4 = directions[Symbol.iterator](), _step4; !(_iteratorNormalCompletion4 = (_step4 = _iterator4.next()).done); _iteratorNormalCompletion4 = true) {
-							var dir = _step4.value;
-
-
-							var start = dir.clone().scale(0.1).add(charge.point);
-
-							var vec = new jm.Vec2(0, 0);
-							var currentField;
-
-							var solver = rk4([start.getX(), start.getY()], function (drdt, r, t) {
-								vec.set(r[0], r[1]);
-								currentField = _this2.calcField(vec);
-								drdt[0] = currentField.getX() * (isNegative ? -1 : 1);
-								drdt[1] = currentField.getY() * (isNegative ? -1 : 1);
-							}, 0, 0.01);
-
-							var as = this.cs.coordToPixels([start.getX(), start.getY()]);
-
-							this.renderContext.beginPath();
-							this.renderContext.moveTo(as[0], as[1]);
-
-							var counter = 0;
-							var ap;
-							var fp = new fabric.Point(0, 0);
-							while (true) {
-								solver.step();
-								ap = this.cs.coordToPixels(solver.y);
-								if (counter == 10) {
-									if (!this.cs.inRealBounds(ap)) break;
-									this.renderContext.lineTo(ap[0], ap[1]);
-									counter = 0;
-								}
-
-								fp.setXY.apply(fp, _toConsumableArray(ap));
-								if (this.charges.find(function (x) {
-									return x.graphics.containsPoint(fp);
-								})) break;
-
-								// if (currentField.getX() < 0.1 || currentField.getY() < 0.1) {
-								// 	if (currentField.magSq() < 0.05) {
-								// 		break;
-								// 	}
-								// }
-
-								counter += 1;
-							}
-
-							this.renderContext.stroke();
-
-							// var start = dir.clone().scale(0.1).add(charge.point);
-							//
-							// var vec = new jm.Vec2(0, 0);
-							// var currentField;
-							//
-							// var step = (start.getX() - charge.point.getX() > 0) ? 0.001 : -0.001;
-							// var solver = rk4([start.getY()], (dydx, y, x) => {
-							// 	vec.set(x, y);
-							// 	currentField = this.calcField(vec);
-							// 	dydx[0] = currentField.getY() / currentField.getX();
-							// }, start.getX(), step);
-							//
-							// var as = this.cs.coordToPixels([start.getX(), start.getY()]);
-							//
-							// this.renderContext.beginPath();
-							// this.renderContext.moveTo(as[0], as[1]);
-							//
-							// var counter = 0;
-							// var ap;
-							// while (true) {
-							// 	solver.step();
-							// 	if (counter == 10) {
-							// 		ap = this.cs.coordToPixels([solver.t, solver.y[0]]);
-							// 		if (!this.cs.inRealBounds(ap)) break;
-							// 		this.renderContext.lineTo(ap[0], ap[1]);
-							// 		counter = 0;
-							// 	}
-							// 	counter += 1;
-							// }
-							//
-							// console.log(solver);
-							// this.renderContext.stroke();
-						}
-					} catch (err) {
-						_didIteratorError4 = true;
-						_iteratorError4 = err;
-					} finally {
-						try {
-							if (!_iteratorNormalCompletion4 && _iterator4.return) {
-								_iterator4.return();
-							}
-						} finally {
-							if (_didIteratorError4) {
-								throw _iteratorError4;
-							}
-						}
-					}
-				}
-			} catch (err) {
-				_didIteratorError3 = true;
-				_iteratorError3 = err;
-			} finally {
-				try {
-					if (!_iteratorNormalCompletion3 && _iterator3.return) {
-						_iterator3.return();
-					}
-				} finally {
-					if (_didIteratorError3) {
-						throw _iteratorError3;
-					}
-				}
-			}
-		}
 	}]);
 
 	return SimulationManager;
 }();
-},{"justmath":2,"ode-rk4":3}],2:[function(require,module,exports){
+},{"justmath":2}],2:[function(require,module,exports){
 /*
 Copyright 2013 Daniel Wirtz <dcode@dcode.io>
 
@@ -1039,72 +879,5 @@ limitations under the License.
     }
     
 })(this, Math);
-
-},{}],3:[function(require,module,exports){
-'use strict'
-
-module.exports = IntegratorFactory
-
-var Integrator = function Integrator( y0, deriv, t, dt ) {
-  // Bind variables to this:
-  this.deriv = deriv
-  this.y = y0
-  this.n = this.y.length
-  this.dt = dt
-  this.t = t
-
-  // Create a scratch array into which we compute the derivative:
-  this._ctor = this.y.constructor
-
-  this._w = new this._ctor( this.n )
-  this._k1 = new this._ctor( this.n )
-  this._k2 = new this._ctor( this.n )
-  this._k3 = new this._ctor( this.n )
-  this._k4 = new this._ctor( this.n )
-}
-
-Integrator.prototype.step = function() {
-
-  this.deriv( this._k1, this.y, this.t )
-
-  for(var i=0; i<this.n; i++) {
-    this._w[i] = this.y[i] + this._k1[i] * this.dt * 0.5
-  }
-
-  this.deriv( this._k2, this._w, this.t + this.dt * 0.5 )
-
-  for(var i=0; i<this.n; i++) {
-    this._w[i] = this.y[i] + this._k2[i] * this.dt * 0.5
-  }
-
-  this.deriv( this._k3, this._w, this.t + this.dt * 0.5 )
-
-  for(var i=0; i<this.n; i++) {
-    this._w[i] = this.y[i] + this._k3[i] * this.dt
-  }
-
-  this.deriv( this._k4, this._w, this.t + this.dt)
-
-
-  var dto6 = this.dt / 6.0
-  for(var i=0; i<this.n; i++) {
-    this.y[i] += dto6 * ( this._k1[i] + 2*this._k2[i] + 2*this._k3[i] + this._k4[i] )
-  }
-
-  this.t += this.dt
-  return this
-}
-
-Integrator.prototype.steps = function( n ) {
-  for(var step=0; step<n; step++) {
-    this.step()
-  }
-  return this
-}
-
-function IntegratorFactory( y0, deriv, t, dt ) {
-  return new Integrator( y0, deriv, t, dt )
-}
-
 
 },{}]},{},[1]);
